@@ -2,9 +2,12 @@ import mime from 'mime-types';
 import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
 import path from 'path';
+import Bull from 'bull';
 import { ObjectId } from 'mongodb';
 import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
+
+const fileQueue = new Bull('fileQueue');
 
 class FilesController {
   static async postUpload(req, res) {
@@ -67,6 +70,12 @@ class FilesController {
     };
 
     const result = await dbClient.client.db().collection('files').insertOne(newFile);
+    if (type === 'image') {
+      fileQueue.add({
+        userId,
+        fileId: result.insertedId,
+      });
+    }
     return res.status(201).json({
       id: result.insertedId,
       userId,
@@ -245,6 +254,7 @@ class FilesController {
   static async getFile(req, res) {
     const token = req.headers['x-token'];
     const fileId = req.params.id;
+    const size = req.query.size || 0;
 
     let file;
     try {
@@ -269,16 +279,21 @@ class FilesController {
       return res.status(400).json({ error: "A folder doesn't have content" });
     }
 
-    const { localPath } = file;
+    let filePath = file.localPath;
+
+    if (size && ['500', '250', '100'].includes(size)) {
+      filePath = `${file.localPath}_${size}`;
+    }
+
     try {
-      await fs.access(localPath);
+      await fs.access(filePath);
     } catch (error) {
       return res.status(404).json({ error: 'Not found' });
     }
 
     const mimeType = mime.lookup(file.name) || 'application/octet-stream';
 
-    const fileContent = await fs.readFile(localPath);
+    const fileContent = await fs.readFile(filePath);
     res.set('Content-Type', mimeType);
     return res.status(200).send(fileContent);
   }
