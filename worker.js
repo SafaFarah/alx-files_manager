@@ -1,12 +1,13 @@
-import Bull from 'bull';
+import Queue from 'bull/lib/queue';
 import imageThumbnail from 'image-thumbnail';
 import { promises as fs } from 'fs';
 import { ObjectId } from 'mongodb';
 import dbClient from './utils/db';
 
-const fileQueue = new Bull('fileQueue');
+const fileQueue = new Queue('thumbnail generation');
+const userQueue = new Queue('email sending');
 
-const processQueue = async (job) => {
+const processThumbnailQueue = async (job) => {
   const { fileId, userId } = job.data;
 
   if (!fileId) throw new Error('Missing fileId');
@@ -42,10 +43,30 @@ const processQueue = async (job) => {
 
 fileQueue.process(async (job) => {
   try {
-    await processQueue(job);
+    await processThumbnailQueue(job);
   } catch (error) {
-    console.error('Error processing queue:', error);
+    console.error('Error processing thumbnail queue:', error);
   }
 });
 
-export default processQueue;
+userQueue.process(async (job) => {
+  const userId = job.data.userId || null;
+
+  if (!userId) {
+    throw new Error('Missing userId');
+  }
+
+  const userObjId = new ObjectId(userId);
+  const userCollection = dbClient.client.db().collection('users');
+  const user = await userCollection.findOne({ _id: userObjId });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  console.log(`Welcome ${user.email}!`);
+});
+
+userQueue.on('failed', (job, err) => {
+  console.error(`Job failed: ${job.id}, error: ${err.message}`);
+});
