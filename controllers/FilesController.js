@@ -123,13 +123,18 @@ class FilesController {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const parentId = req.query.parentId || 0;
+    const parentId = req.query.parentId ? ObjectId(req.query.parentId) : 0;
     const page = parseInt(req.query.page, 10) || 0;
     const pageSize = 20;
 
     try {
       const files = await dbClient.client.db().collection('files').aggregate([
-        { $match: { userId: ObjectId(userId), parentId: parentId === 0 ? 0 : ObjectId(parentId) } },
+        {
+          $match: {
+            userId: ObjectId(userId),
+            parentId: parentId === 0 ? 0 : parentId,
+          },
+        },
         { $skip: page * pageSize },
         { $limit: pageSize },
       ]).toArray();
