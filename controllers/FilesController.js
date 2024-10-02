@@ -1,3 +1,4 @@
+import mime from 'mime-types';
 import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -239,6 +240,47 @@ class FilesController {
       console.error('Error in putUnpublish:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
+  }
+
+  static async getFile(req, res) {
+    const token = req.headers['x-token'];
+    const fileId = req.params.id;
+
+    let file;
+    try {
+      file = await dbClient.client.db().collection('files').findOne({ _id: ObjectId(fileId) });
+    } catch (error) {
+      console.error('Error fetching file:', error);
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const userId = token ? await redisClient.get(`auth_${token}`) : null;
+    const isOwner = userId && userId === file.userId.toString();
+
+    if (!file.isPublic && !isOwner) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    if (file.type === 'folder') {
+      return res.status(400).json({ error: "A folder doesn't have content" });
+    }
+
+    const { localPath } = file;
+    try {
+      await fs.access(localPath);
+    } catch (error) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const mimeType = mime.lookup(file.name) || 'application/octet-stream';
+
+    const fileContent = await fs.readFile(localPath);
+    res.set('Content-Type', mimeType);
+    return res.status(200).send(fileContent);
   }
 }
 
