@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { ObjectId } from 'mongodb';
 import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
 
@@ -21,9 +22,13 @@ class FilesController {
     if (!data && type !== 'folder') return res.status(400).json({ error: 'Missing data' });
 
     if (parentId !== 0) {
-      const parentFile = await dbClient.client.db().collection('files').findOne({ _id: parentId });
-      if (!parentFile) return res.status(400).json({ error: 'Parent not found' });
-      if (parentFile.type !== 'folder') return res.status(400).json({ error: 'Parent is not a folder' });
+      try {
+        const parentFile = await dbClient.client.db().collection('files').findOne({ _id: ObjectId(parentId) });
+        if (!parentFile) return res.status(400).json({ error: 'Parent not found' });
+        if (parentFile.type !== 'folder') return res.status(400).json({ error: 'Parent is not a folder' });
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid parentId format' });
+      }
     }
 
     if (type === 'folder') {
